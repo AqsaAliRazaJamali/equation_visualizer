@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Equation Visualizer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#06060f;font-family:'Segoe UI',sans-serif;color:#fff;overflow:hidden}
+#app{display:flex;height:100vh}
+ 
+/* ── LEFT PANEL ── */
+#left{width:280px;min-width:280px;display:flex;flex-direction:column;background:#0c0c1e;border-right:1px solid rgba(255,255,255,0.07);overflow:hidden}
+#left-top{padding:14px 14px 8px;border-bottom:1px solid rgba(255,255,255,0.06)}
+#left-top h2{font-size:14px;font-weight:500;color:rgba(255,255,255,0.85);letter-spacing:1px;text-transform:uppercase}
+#left-top p{font-size:11px;color:rgba(255,255,255,0.3);margin-top:3px}
+#eq-list{flex:1;overflow-y:auto;padding:8px 10px}
+#eq-list::-webkit-scrollbar{width:4px}
+#eq-list::-webkit-scrollbar-track{background:transparent}
+#eq-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+.eq-card{padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.03);margin-bottom:7px;cursor:pointer;transition:all 0.18s}
+.eq-card:hover{background:rgba(255,255,255,0.07);border-color:rgba(255,255,255,0.15)}
+.eq-card.active{background:rgba(80,140,255,0.12);border-color:rgba(80,140,255,0.45)}
+.eq-name{font-size:12px;font-weight:500;color:rgba(255,255,255,0.85);margin-bottom:4px}
+.eq-formula{font-size:11px;color:rgba(100,180,255,0.8);font-family:monospace;margin-bottom:4px}
+.eq-desc{font-size:10.5px;color:rgba(255,255,255,0.32);line-height:1.4}
+ 
+/* ── RIGHT PANEL ── */
+#right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#toolbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:rgba(255,255,255,0.025);border-bottom:1px solid rgba(255,255,255,0.06);flex-wrap:wrap}
+#eq-title{font-size:13px;font-weight:500;color:rgba(255,255,255,0.8);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-btn{padding:4px 12px;border-radius:14px;border:1px solid rgba(255,255,255,0.14);background:transparent;color:rgba(255,255,255,0.6);font-size:11px;cursor:pointer;transition:all 0.18s;white-space:nowrap}
+.tb-btn:hover{background:rgba(255,255,255,0.08);color:#fff}
+.tb-btn.active{background:rgba(80,140,255,0.18);border-color:#508fff;color:#88bbff}
+#speed-wrap{display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(255,255,255,0.4)}
+#speed-wrap input{width:80px;accent-color:#508fff}
+#canvasWrap{flex:1;position:relative}
+canvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0}
+#hud{position:absolute;top:12px;right:14px;text-align:right;pointer-events:none}
+#hud-val{font-size:22px;font-weight:300;color:rgba(255,255,255,0.9);font-family:monospace}
+#hud-label{font-size:11px;color:rgba(255,255,255,0.32);margin-top:2px}
+#pbar{position:absolute;bottom:0;left:0;width:100%;height:2px;background:rgba(255,255,255,0.05)}
+#pfill{height:100%;background:linear-gradient(90deg,#3a7aff,#a040ff);width:0%}
+#placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+#placeholder p{font-size:16px;color:rgba(255,255,255,0.2);letter-spacing:1px}
+#placeholder span{font-size:12px;color:rgba(255,255,255,0.1);margin-top:8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="left">
+    <div id="left-top">
+      <h2>Equations</h2>
+      <p>Click any equation to visualize it</p>
+    </div>
+    <div id="eq-list" id="eq-list"></div>
+  </div>
+  <div id="right">
+    <div id="toolbar">
+      <span id="eq-title">Select an equation →</span>
+      <button class="tb-btn active" onclick="setMode('animated')" id="btn-anim">Animate</button>
+      <button class="tb-btn" onclick="setMode('static')" id="btn-static">Static</button>
+      <div id="speed-wrap">
+        Speed <input type="range" id="speedSlider" min="1" max="10" value="4">
+      </div>
+      <button class="tb-btn" onclick="restartAnim()">↺ Restart</button>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="c"></canvas>
+      <div id="hud"><div id="hud-val"></div><div id="hud-label"></div></div>
+      <div id="placeholder"><p>← Pick an equation</p><span>Watch it come alive</span></div>
+      <div id="pbar"><div id="pfill"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+// ─── canvas setup ────────────────────────────────────────────
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+let W,H;
+function resize(){
+  const wr=document.getElementById('canvasWrap');
+  W=cv.width=wr.clientWidth; H=cv.height=wr.clientHeight;
+}
+window.addEventListener('resize',()=>{resize();if(currentEq)run(currentEq);});
+resize();
+ 
+function bg(){ctx.fillStyle='#06060f';ctx.fillRect(0,0,W,H);}
+function prog(p){document.getElementById('pfill').style.width=Math.min(1,p)*100+'%';}
+function hud(val,label){
+  document.getElementById('hud-val').textContent=val;
+  document.getElementById('hud-label').textContent=label;
+}
+ 
+// ─── state ───────────────────────────────────────────────────
+let currentEq=null,raf=null,tick=0,mode='animated';
+let speed=4;
+document.getElementById('speedSlider').addEventListener('input',e=>{speed=+e.target.value;});
+ 
+function setMode(m){
+  mode=m;
+  document.getElementById('btn-anim').classList.toggle('active',m==='animated');
+  document.getElementById('btn-static').classList.toggle('active',m==='static');
+  if(currentEq) run(currentEq);
+}
+function restartAnim(){if(currentEq) run(currentEq);}
+ 
+// ─── equations list ──────────────────────────────────────────
+const EQUATIONS=[
+  {id:'sine',       name:'Sine Wave',         formula:'y = sin(x)',                    desc:'Smooth oscillating wave. Foundation of sound & signals.'},
+  {id:'parabola',   name:'Parabola',           formula:'y = x²',                        desc:'Classic U-curve. Used in projectile motion & optics.'},
+  {id:'spiral',     name:'Archimedean Spiral', formula:'r = θ',                         desc:'Equal-spacing spiral. Found in nature & engineering.'},
+  {id:'expgrowth',  name:'Exponential Growth', formula:'y = eˣ',                        desc:'Starts slow, explodes fast. AI learning curves, population.'},
+  {id:'combined',   name:'Combined Waves',     formula:'y = sin(x) + cos(2x)',          desc:'Two waves interfering. Rich & complex visual.'},
+  {id:'heart',      name:'Heart Curve',        formula:'x=16sin³(t), y=13cos(t)−5cos(2t)−2cos(3t)−cos(4t)', desc:'Famous parametric heart. ❤️'},
+  {id:'butterfly',  name:'Butterfly Curve',    formula:'r = eˢⁱⁿ⁽θ⁾ − 2cos(4θ)',        desc:'Intricate butterfly-like polar curve.'},
+  {id:'rose',       name:'Rose Curve',         formula:'r = sin(5θ)',                   desc:'5-petal flower. Change n for different petals.'},
+  {id:'cardioid',   name:'Cardioid',           formula:'r = 1 − cos(θ)',                desc:'Smooth heart-like polar curve. Very elegant.'},
+  {id:'lemniscate', name:'Lemniscate (∞)',      formula:'r² = cos(2θ)',                  desc:'Infinity symbol. Symbol of balance & symmetry.'},
+  {id:'heartsmooth',name:'Smooth Heart',       formula:'x=16sin³(t), y=13cos(t)…',      desc:'Rounded realistic heart curve.'},
+  {id:'hypotrochoid',name:'Spirograph',        formula:'x=(R−r)cos(t)+d·cos(…)',        desc:'Classic spirograph pattern. Super aesthetic.'},
+  {id:'superformula',name:'Superformula',      formula:'r=(|cos(mθ/4)|ⁿ+|sin(mθ/4)|ⁿ)^(−1/n)',desc:'Creates flowers, stars, abstract shapes.'},
+  {id:'epicycloid', name:'Epicycloid',         formula:'x=(a+b)cos(t)−b·cos(…)',        desc:'Flower/gear shapes. Change a,b for new designs.'},
+  {id:'fermat',     name:'Fermat Spiral',      formula:'r = √θ',                        desc:'Galaxy-arm spiral. Aesthetic when animated.'},
+  {id:'astroid',    name:'Astroid',            formula:'x=cos³(t), y=sin³(t)',           desc:'Rounded diamond / 4-pointed star.'},
+  {id:'lissajous',  name:'Lissajous Curve',    formula:'x=sin(3t), y=sin(4t)',           desc:'Looping abstract art. Change ratios for new shapes.'},
+  {id:'daisy',      name:'Daisy / Rose',       formula:'r = sin(nθ)',                   desc:'Dense flower. n=8 or n=12 for many petals.'},
+  {id:'superellipse',name:'Superellipse',      formula:'|x/a|ⁿ + |y/b|ⁿ = 1',          desc:'Between diamond and square based on n.'},
+  {id:'torus',      name:'Torus Knot',         formula:'x=cos(t)(3+cos(nt)), y=sin(t)(3+cos(nt))',desc:'Knot-like looping shape.'},
+  {id:'heartspiral',name:'Heart Spiral Combo',  formula:'r = θ · sin(θ)',                        desc:'Spiral meets petals — creative polar fusion.'},
+  {id:'logspiral',  name:'Logarithmic Spiral',  formula:'r = a · eᵇθ',                           desc:'Found in shells 🐚, hurricanes 🌪️, galaxies 🌌'},
+  {id:'starcurve',  name:'Star Shape Curve',    formula:'r = 1 + 0.5·cos(8θ)',                   desc:'8-pointed star-like polar pattern ⭐'},
+  {id:'aqsa',       name:'Aqsa ❤️ Math Art',    formula:'Heart + Flower + Wave + Sparkle',        desc:'A combined masterpiece — heart, flower, wave & decorative loops ✨'},
+];
+ 
+// Build left panel
+const list=document.getElementById('eq-list');
+EQUATIONS.forEach(eq=>{
+  const d=document.createElement('div');
+  d.className='eq-card';d.id='card-'+eq.id;
+  d.innerHTML=`<div class="eq-name">${eq.name}</div><div class="eq-formula">${eq.formula}</div><div class="eq-desc">${eq.desc}</div>`;
+  d.addEventListener('click',()=>selectEq(eq));
+  list.appendChild(d);
+});
+ 
+function selectEq(eq){
+  document.querySelectorAll('.eq-card').forEach(c=>c.classList.remove('active'));
+  document.getElementById('card-'+eq.id).classList.add('active');
+  document.getElementById('placeholder').style.display='none';
+  document.getElementById('eq-title').textContent=eq.name+' — '+eq.formula;
+  currentEq=eq;
+  run(eq);
+}
+ 
+// ─── run engine ──────────────────────────────────────────────
+function run(eq){
+  cancelAnimationFrame(raf);
+  tick=0; bg(); prog(0);
+  hud('','');
+  if(mode==='static') drawStatic(eq);
+  else animateEq(eq);
+}
+ 
+// ─── GRID ────────────────────────────────────────────────────
+function drawGrid(cx2,cy2,scaleX,scaleY,xRange,yRange){
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=0.7;
+  // vertical
+  for(let x=-xRange;x<=xRange;x++){
+    const sx=cx2+x*scaleX;
+    ctx.beginPath();ctx.moveTo(sx,0);ctx.lineTo(sx,H);ctx.stroke();
+  }
+  // horizontal
+  for(let y=-yRange;y<=yRange;y++){
+    const sy=cy2+y*scaleY;
+    ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(W,sy);ctx.stroke();
+  }
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.22)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx2,0);ctx.lineTo(cx2,H);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,cy2);ctx.lineTo(W,cy2);ctx.stroke();
+  // axis labels
+  ctx.fillStyle='rgba(255,255,255,0.22)';ctx.font='10px monospace';ctx.textAlign='center';
+  for(let x=-xRange;x<=xRange;x+=2){
+    if(x===0) continue;
+    ctx.fillText(x,cx2+x*scaleX,cy2+14);
+  }
+  ctx.textAlign='right';
+  for(let y=-yRange;y<=yRange;y+=2){
+    if(y===0) continue;
+    ctx.fillText(-y,cx2-6,cy2+y*scaleY+4);
+  }
+}
+ 
+function drawPolarGrid(cx2,cy2,maxR){
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=0.7;
+  [0.25,0.5,0.75,1].forEach(f=>{
+    ctx.beginPath();ctx.arc(cx2,cy2,maxR*f,0,Math.PI*2);ctx.stroke();
+  });
+  for(let a=0;a<Math.PI*2;a+=Math.PI/6){
+    ctx.beginPath();ctx.moveTo(cx2,cy2);ctx.lineTo(cx2+maxR*Math.cos(a),cy2+maxR*Math.sin(a));ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx2-maxR,cy2);ctx.lineTo(cx2+maxR,cy2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx2,cy2-maxR);ctx.lineTo(cx2,cy2+maxR);ctx.stroke();
+}
+ 
+// ─── ANIMATE ────────────────────────────────────────────────
+function animateEq(eq){
+  const DRAW=animators[eq.id];
+  if(!DRAW){animateGeneric(eq);return;}
+  let state={};
+  DRAW.init&&DRAW.init(state);
+  const maxT=DRAW.maxTick||1200;
+  (function loop(){
+    DRAW.draw(state,tick);
+    prog(tick/maxT);
+    tick+=speed;
+    if(tick<maxT) raf=requestAnimationFrame(loop);
+    else prog(1);
+  })();
+}
+ 
+function drawStatic(eq){
+  const DRAW=animators[eq.id];
+  if(!DRAW){return;}
+  let state={};DRAW.init&&DRAW.init(state);
+  const maxT=DRAW.maxTick||1200;
+  for(let t=0;t<maxT;t+=3) DRAW.draw(state,t);
+  prog(1);
+}
+ 
+// ─── ANIMATORS ───────────────────────────────────────────────
+const animators={};
+ 
+// helper: map value to canvas
+function mx(x,cx2,scaleX){return cx2+x*scaleX;}
+function my(y,cy2,scaleY){return cy2-y*scaleY;}
+ 
+// glow stroke helper
+function glowLine(pts,color,lw,blur){
+  if(pts.length<2) return;
+  ctx.shadowBlur=blur||14;ctx.shadowColor=color;
+  ctx.strokeStyle=color;ctx.lineWidth=lw||2.2;
+  ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+  ctx.stroke();ctx.shadowBlur=0;
+}
+ 
+// ── 1. SINE WAVE ──────────────────────────────────────────────
+animators.sine={
+  maxTick:1000,
+  init(s){s.trail=[];},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,SX=W/12,SY=H/3.5;
+    drawGrid(CX,CY,SX,SY,6,3);
+    const progress=t/1000;
+    const xEnd=-Math.PI*2+progress*Math.PI*4;
+    // Draw the wave up to current x
+    const pts=[];
+    for(let i=0;i<400;i++){
+      const x=-Math.PI*2+i/400*Math.PI*4;
+      if(x>xEnd) break;
+      pts.push([mx(x,CX,SX),my(Math.sin(x),CY,SY)]);
+    }
+    // Gradient color along wave
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=200+i/pts.length*120;
+        ctx.strokeStyle=`hsl(${hue},90%,62%)`;
+        ctx.shadowBlur=10;ctx.shadowColor=`hsl(${hue},90%,62%)`;
+        ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    // Moving dot
+    if(pts.length>0){
+      const lp=pts[pts.length-1];
+      const cx2=xEnd,y=Math.sin(cx2);
+      ctx.fillStyle='#fff';ctx.shadowBlur=18;ctx.shadowColor='#88ddff';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      // Vertical dashed line to axis
+      ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(lp[0],lp[1]);ctx.lineTo(lp[0],CY);ctx.stroke();ctx.setLineDash([]);
+      hud('sin('+xEnd.toFixed(2)+') = '+Math.sin(xEnd).toFixed(4),'current value');
+    }
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('y = sin(x)',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Amplitude: 1  ·  Period: 2π',20,48);
+  }
+};
+ 
+// ── 2. PARABOLA ───────────────────────────────────────────────
+animators.parabola={
+  maxTick:900,
+  init(s){s.pts=[];},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H*0.75,SX=W/12,SY=H/16;
+    drawGrid(CX,CY,SX,SY,6,5);
+    const progress=t/900;
+    const xMax=4*progress; // grows from 0 to 4
+    const pts=[];
+    for(let i=-200;i<=200;i++){
+      const x=i/200*xMax;
+      const y=x*x;
+      pts.push([mx(x,CX,SX),my(y,CY,SY)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=260+i/pts.length*80;
+        ctx.strokeStyle=`hsl(${hue},85%,62%)`;
+        ctx.shadowBlur=9;ctx.shadowColor=`hsl(${hue},85%,62%)`;
+        ctx.lineWidth=2.4;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    // Dot at leading edge
+    if(xMax>0){
+      const lx=mx(xMax,CX,SX),ly=my(xMax*xMax,CY,SY);
+      ctx.fillStyle='#ffdd44';ctx.shadowBlur=16;ctx.shadowColor='#ffdd44';
+      ctx.beginPath();ctx.arc(lx,ly,6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      const rx=mx(-xMax,CX,SX);
+      ctx.fillStyle='#ffdd44';ctx.beginPath();ctx.arc(rx,ly,6,0,Math.PI*2);ctx.fill();
+      hud('x = ±'+xMax.toFixed(2)+'   y = '+( xMax*xMax).toFixed(2),'growing parabola');
+    }
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('y = x²',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Vertex at origin · Symmetric about y-axis',20,48);
+  }
+};
+ 
+// ── 3. ARCHIMEDEAN SPIRAL ─────────────────────────────────────
+animators.spiral={
+  maxTick:1100,
+  init(s){s.pts=[];},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.42;
+    drawPolarGrid(CX,CY,maxR);
+    const maxTheta=t/1100*Math.PI*12;
+    const sc=maxR/(Math.PI*6);
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const theta=i/800*maxTheta;
+      const r=theta*sc;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=180+i/pts.length*160;
+        ctx.strokeStyle=`hsl(${hue},85%,60%)`;
+        ctx.shadowBlur=6;ctx.shadowColor=`hsl(${hue},85%,60%)`;
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#fff';ctx.shadowBlur=14;ctx.shadowColor='#fff';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('θ = '+(maxTheta/Math.PI).toFixed(2)+'π','r = θ (polar)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = θ  (Archimedean Spiral)',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Equal spacing between turns · Found in nature',20,48);
+  }
+};
+ 
+// ── 4. EXPONENTIAL GROWTH ─────────────────────────────────────
+animators.expgrowth={
+  maxTick:900,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W*0.25,CY=H*0.82,SX=W/12,SY=H/18;
+    drawGrid(CX,CY,SX,SY,6,4);
+    const progress=t/900;
+    const xEnd=-3+progress*6;
+    const pts=[];
+    for(let i=0;i<=400;i++){
+      const x=-3+i/400*(xEnd+3);
+      const y=Math.exp(x);
+      if(y>20) break;
+      pts.push([mx(x,CX,SX),my(y,CY,SY)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=40+i/pts.length*100;
+        ctx.strokeStyle=`hsl(${hue},90%,58%)`;
+        ctx.shadowBlur=9;ctx.shadowColor=`hsl(${hue},90%,58%)`;
+        ctx.lineWidth=2.4;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ffaa44';ctx.shadowBlur=16;ctx.shadowColor='#ffaa44';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    const xv=xEnd;const yv=Math.exp(Math.min(xv,3));
+    hud('e^'+xv.toFixed(2)+' = '+yv.toFixed(3),'exponential');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('y = eˣ',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Doubles faster as x grows',20,48);
+  }
+};
+ 
+// ── 5. COMBINED WAVES ─────────────────────────────────────────
+animators.combined={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,SX=W/12,SY=H/3.5;
+    drawGrid(CX,CY,SX,SY,6,3);
+    const progress=t/1000;
+    const xEnd=-Math.PI*2+progress*Math.PI*4;
+    const pts1=[],pts2=[],pts3=[];
+    for(let i=0;i<=400;i++){
+      const x=-Math.PI*2+i/400*Math.PI*4;
+      if(x>xEnd) break;
+      pts1.push([mx(x,CX,SX),my(Math.sin(x),CY,SY)]);
+      pts2.push([mx(x,CX,SX),my(Math.cos(2*x),CY,SY)]);
+      pts3.push([mx(x,CX,SX),my(Math.sin(x)+Math.cos(2*x),CY,SY)]);
+    }
+    glowLine(pts1,'rgba(80,160,255,0.35)',1.5,5);
+    glowLine(pts2,'rgba(255,100,180,0.35)',1.5,5);
+    glowLine(pts3,'#ffe066',2.8,16);
+    if(pts3.length>0){
+      const lp=pts3[pts3.length-1];
+      ctx.fillStyle='#fff';ctx.shadowBlur=16;ctx.shadowColor='#ffe066';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    // Legend
+    ctx.font='11px monospace';ctx.textAlign='left';
+    ctx.fillStyle='rgba(80,160,255,0.7)';ctx.fillText('sin(x)',20,H-42);
+    ctx.fillStyle='rgba(255,100,180,0.7)';ctx.fillText('cos(2x)',20,H-24);
+    ctx.fillStyle='#ffe066';ctx.fillText('sin(x) + cos(2x)  ← result',20,H-6);
+    hud('x = '+xEnd.toFixed(2),'wave superposition');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('y = sin(x) + cos(2x)',20,28);
+  }
+};
+ 
+// ── 6. HEART CURVE ────────────────────────────────────────────
+animators.heart={
+  maxTick:1000,
+  init(s){s.pts=[];},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2+20,sc=Math.min(W,H)/40;
+    const progress=t/1000;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=500;i++){
+      const tt=i/500*tMax;
+      const x=16*Math.pow(Math.sin(tt),3);
+      const y=13*Math.cos(tt)-5*Math.cos(2*tt)-2*Math.cos(3*tt)-Math.cos(4*tt);
+      pts.push([CX+x*sc,CY-y*sc]);
+    }
+    if(pts.length>1){
+      // Fill heart with gradient glow
+      ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+      if(progress>0.98){ctx.fillStyle='rgba(255,40,80,0.08)';ctx.fill();}
+      for(let i=1;i<pts.length;i++){
+        const hue=340+i/pts.length*30;
+        const lum=60+i/pts.length*15;
+        ctx.strokeStyle=`hsl(${hue},95%,${lum}%)`;
+        ctx.shadowBlur=12;ctx.shadowColor=`hsl(${hue},95%,65%)`;
+        ctx.lineWidth=2.6;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ff3366';ctx.shadowBlur=20;ctx.shadowColor='#ff3366';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],7,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','heart drawing');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('x=16sin³(t)  y=13cos(t)−5cos(2t)−2cos(3t)−cos(4t)',20,28);
+  }
+};
+ 
+// ── 7. BUTTERFLY ─────────────────────────────────────────────
+animators.butterfly={
+  maxTick:1200,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,sc=Math.min(W,H)*0.18;
+    const progress=t/1200;
+    const tMax=progress*Math.PI*4;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const theta=i/800*tMax;
+      const r=Math.exp(Math.sin(theta))-2*Math.cos(4*theta)+Math.pow(Math.sin((2*theta-Math.PI)/24),5);
+      pts.push([CX+r*Math.cos(theta)*sc,CY-r*Math.sin(theta)*sc]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=160+i/pts.length*200;
+        ctx.strokeStyle=`hsl(${hue},88%,62%)`;
+        ctx.shadowBlur=8;ctx.shadowColor=`hsl(${hue},88%,62%)`;
+        ctx.lineWidth=1.8;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#aaffcc';ctx.shadowBlur=16;ctx.shadowColor='#aaffcc';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('θ = '+(tMax/Math.PI).toFixed(2)+'π','butterfly polar curve');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = eˢⁱⁿ⁽θ⁾ − 2cos(4θ) + sin⁵((2θ−π)/24)',20,28);
+  }
+};
+ 
+// ── 8. ROSE CURVE ─────────────────────────────────────────────
+animators.rose={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.4;
+    drawPolarGrid(CX,CY,maxR);
+    const n=5;
+    const progress=t/1000;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const theta=i/800*tMax;
+      const r=Math.sin(n*theta)*maxR;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=300+i/pts.length*60;
+        ctx.strokeStyle=`hsl(${hue},88%,65%)`;
+        ctx.shadowBlur=10;ctx.shadowColor=`hsl(${hue},88%,65%)`;
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ff88cc';ctx.shadowBlur=16;ctx.shadowColor='#ff88cc';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('θ = '+(tMax/Math.PI).toFixed(2)+'π  · n='+n,'rose r=sin(nθ)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = sin(5θ)  — Rose Curve',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('n=5 petals · odd n → n petals · even n → 2n petals',20,48);
+  }
+};
+ 
+// ── 9. CARDIOID ──────────────────────────────────────────────
+animators.cardioid={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.38;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/1000;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const theta=i/600*tMax;
+      const r=(1-Math.cos(theta))*maxR*0.5;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      ctx.beginPath();
+      if(progress>0.98){pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));ctx.fillStyle='rgba(255,100,60,0.07)';ctx.fill();}
+      for(let i=1;i<pts.length;i++){
+        const hue=10+i/pts.length*40;
+        ctx.strokeStyle=`hsl(${hue},88%,62%)`;
+        ctx.shadowBlur=10;ctx.shadowColor=`hsl(${hue},88%,62%)`;
+        ctx.lineWidth=2.2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('θ = '+(tMax/Math.PI).toFixed(2)+'π','r = 1 − cos(θ)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = 1 − cos(θ)  — Cardioid',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Heart-like polar curve · envelope of circles',20,48);
+  }
+};
+ 
+// ── 10. LEMNISCATE ───────────────────────────────────────────
+animators.lemniscate={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,sc=Math.min(W,H)*0.38;
+    const progress=t/1000;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const theta=i/600*tMax;
+      const r2=Math.cos(2*theta);
+      if(r2<0) continue;
+      const r=Math.sqrt(r2)*sc;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    // Second lobe
+    const pts2=[];
+    for(let i=0;i<=600;i++){
+      const theta=i/600*tMax+Math.PI;
+      const r2=Math.cos(2*theta);
+      if(r2<0) continue;
+      const r=Math.sqrt(r2)*sc;
+      pts2.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    [pts,pts2].forEach((p,pi)=>{
+      if(p.length<2) return;
+      for(let i=1;i<p.length;i++){
+        const hue=pi===0?200:280;
+        ctx.strokeStyle=`hsl(${hue},88%,65%)`;
+        ctx.shadowBlur=12;ctx.shadowColor=`hsl(${hue},88%,65%)`;
+        ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(p[i-1][0],p[i-1][1]);ctx.lineTo(p[i][0],p[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    });
+    hud('θ = '+(tMax/Math.PI).toFixed(2)+'π','r² = cos(2θ)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r² = cos(2θ)  — Lemniscate of Bernoulli',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('∞ shape · Symbol of balance & symmetry',20,48);
+  }
+};
+ 
+// ── 11. SMOOTH HEART ─────────────────────────────────────────
+animators.heartsmooth={maxTick:1000,init(s){},draw(s,t){animators.heart.draw(s,t);}};
+ 
+// ── 12. SPIROGRAPH / HYPOTROCHOID ────────────────────────────
+animators.hypotrochoid={
+  maxTick:1200,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2;
+    const R=Math.min(W,H)*0.32,r=R/3.5,d=R*0.85;
+    const progress=t/1200;
+    const tMax=progress*Math.PI*14;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const tt=i/800*tMax;
+      const x=CX+(R-r)*Math.cos(tt)+d*Math.cos((R-r)/r*tt);
+      const y=CY+(R-r)*Math.sin(tt)-d*Math.sin((R-r)/r*tt);
+      pts.push([x,y]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=240+i/pts.length*160;
+        ctx.strokeStyle=`hsl(${hue},88%,62%)`;
+        ctx.shadowBlur=7;ctx.shadowColor=`hsl(${hue},88%,62%)`;
+        ctx.lineWidth=1.8;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ccaaff';ctx.shadowBlur=16;ctx.shadowColor='#ccaaff';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','spirograph');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Hypotrochoid — Spirograph Pattern',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('R='+R.toFixed(0)+'  r='+r.toFixed(0)+'  d='+d.toFixed(0),20,48);
+  }
+};
+ 
+// ── 13. SUPERFORMULA ─────────────────────────────────────────
+animators.superformula={
+  maxTick:1000,
+  init(s){s.phase=0;},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.38;
+    const progress=t/1000;
+    // Animate m (number of petals) from 3 to 12
+    const m=3+Math.floor(progress*9);
+    const n=Math.max(0.5,progress*4);
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const theta=i/600*Math.PI*2;
+      if(theta>tMax) break;
+      const a=1,b=1;
+      const t1=Math.abs(Math.cos(m*theta/4)/a);
+      const t2=Math.abs(Math.sin(m*theta/4)/b);
+      const rr=Math.pow(Math.pow(t1,n)+Math.pow(t2,n),-1/n);
+      const r=rr*maxR*0.8;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+      ctx.fillStyle='rgba(100,200,180,0.06)';ctx.fill();
+      for(let i=1;i<pts.length;i++){
+        const hue=140+i/pts.length*200;
+        ctx.strokeStyle=`hsl(${hue},85%,60%)`;
+        ctx.shadowBlur=8;ctx.shadowColor=`hsl(${hue},85%,60%)`;
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('m='+m+'  n='+n.toFixed(1),'superformula morphing');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Superformula — morphing shapes',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('r=(|cos(mθ/4)|ⁿ + |sin(mθ/4)|ⁿ)^(−1/n)',20,48);
+  }
+};
+ 
+// ── 14. EPICYCLOID ───────────────────────────────────────────
+animators.epicycloid={
+  maxTick:1100,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2;
+    const a=Math.min(W,H)*0.2,b=Math.min(W,H)*0.055;
+    const progress=t/1100;
+    const tMax=progress*Math.PI*10;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const tt=i/800*tMax;
+      const x=CX+(a+b)*Math.cos(tt)-b*Math.cos((a+b)/b*tt);
+      const y=CY+(a+b)*Math.sin(tt)-b*Math.sin((a+b)/b*tt);
+      pts.push([x,y]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=40+i/pts.length*220;
+        ctx.strokeStyle=`hsl(${hue},88%,60%)`;
+        ctx.shadowBlur=7;ctx.shadowColor=`hsl(${hue},88%,60%)`;
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','epicycloid');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Epicycloid — a='+a.toFixed(0)+' b='+b.toFixed(0),20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('x=(a+b)cos(t)−b·cos((a+b)t/b)',20,48);
+  }
+};
+ 
+// ── 15. FERMAT SPIRAL ────────────────────────────────────────
+animators.fermat={
+  maxTick:1100,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.42;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/1100;
+    const tMax=progress*Math.PI*16;
+    const sc=maxR/Math.sqrt(Math.PI*8);
+    const pts1=[],pts2=[];
+    for(let i=0;i<=600;i++){
+      const theta=i/600*tMax;
+      const r=sc*Math.sqrt(theta);
+      pts1.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+      pts2.push([CX-r*Math.cos(theta),CY-r*Math.sin(theta)]);
+    }
+    [pts1,pts2].forEach((p,pi)=>{
+      if(p.length<2)return;
+      for(let i=1;i<p.length;i++){
+        const hue=pi===0?200:280;
+        const br=55+i/p.length*15;
+        ctx.strokeStyle=`hsl(${hue},85%,${br}%)`;
+        ctx.shadowBlur=5;ctx.shadowColor=`hsl(${hue},85%,${br}%)`;
+        ctx.lineWidth=1.8;
+        ctx.beginPath();ctx.moveTo(p[i-1][0],p[i-1][1]);ctx.lineTo(p[i][0],p[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    });
+    hud('θ = '+(tMax/Math.PI).toFixed(1)+'π','r = √θ  Fermat');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = √θ  — Fermat Spiral',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Both arms shown · Resembles galaxy structure',20,48);
+  }
+};
+ 
+// ── 16. ASTROID ───────────────────────────────────────────────
+animators.astroid={
+  maxTick:900,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,a=Math.min(W,H)*0.38;
+    const progress=t/900;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const tt=i/600*tMax;
+      pts.push([CX+a*Math.pow(Math.cos(tt),3),CY+a*Math.pow(Math.sin(tt),3)]);
+    }
+    if(pts.length>1){
+      ctx.beginPath();
+      if(progress>0.98){pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));ctx.fillStyle='rgba(100,180,255,0.05)';ctx.fill();}
+      for(let i=1;i<pts.length;i++){
+        const hue=180+i/pts.length*100;
+        ctx.strokeStyle=`hsl(${hue},85%,62%)`;
+        ctx.shadowBlur=10;ctx.shadowColor=`hsl(${hue},85%,62%)`;
+        ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','astroid');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('x=cos³(t)  y=sin³(t)  — Astroid',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Rounded diamond · 4-cusped hypocycloid',20,48);
+  }
+};
+ 
+// ── 17. LISSAJOUS ─────────────────────────────────────────────
+animators.lissajous={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,sc=Math.min(W,H)*0.38;
+    const progress=t/1000;
+    const tMax=progress*Math.PI*6;
+    const pairs=[[3,4,0],[3,5,Math.PI/6],[5,6,Math.PI/4]];
+    pairs.forEach(([a,b,d],pi)=>{
+      const pts=[];
+      for(let i=0;i<=600;i++){
+        const tt=i/600*tMax;
+        pts.push([CX+sc*Math.sin(a*tt+d),CY+sc*Math.sin(b*tt)]);
+      }
+      if(pts.length>1){
+        for(let i=1;i<pts.length;i++){
+          const hue=100*pi+i/pts.length*60;
+          ctx.strokeStyle=`hsla(${hue},88%,62%,${0.3+0.7/pairs.length})`;
+          ctx.shadowBlur=pi===0?9:3;ctx.shadowColor=`hsl(${hue},88%,62%)`;
+          ctx.lineWidth=pi===0?2.2:1.2;
+          ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+        }ctx.shadowBlur=0;
+      }
+    });
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','Lissajous 3:4, 3:5, 5:6');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Lissajous Curves — x=sin(at+δ), y=sin(bt)',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('3 different ratios overlaid',20,48);
+  }
+};
+ 
+// ── 18. DAISY ─────────────────────────────────────────────────
+animators.daisy={
+  maxTick:1000,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.4;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/1000;
+    const n=Math.max(1,Math.floor(3+progress*9)); // 3→12
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const theta=i/800*tMax;
+      const r=Math.sin(n*theta)*maxR;
+      pts.push([CX+r*Math.cos(theta),CY+r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=280+i/pts.length*80;
+        ctx.strokeStyle=`hsl(${hue},88%,65%)`;
+        ctx.shadowBlur=9;ctx.shadowColor=`hsl(${hue},88%,65%)`;
+        ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('n = '+n+'  θ = '+(tMax/Math.PI).toFixed(1)+'π','daisy r=sin(nθ)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = sin(nθ)  — Daisy/Rose  n = '+n,20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('n growing from 3 → 12 petals as animation plays',20,48);
+  }
+};
+ 
+// ── 19. SUPERELLIPSE ──────────────────────────────────────────
+animators.superellipse={
+  maxTick:900,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,a=Math.min(W,H)*0.35,b=Math.min(W,H)*0.35;
+    const progress=t/900;
+    // n grows from 0.5 to 8
+    const n=0.5+progress*7.5;
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const tt=i/600*Math.PI*2;
+      const cost=Math.cos(tt),sint=Math.sin(tt);
+      const x=a*Math.sign(cost)*Math.pow(Math.abs(cost),2/n);
+      const y=b*Math.sign(sint)*Math.pow(Math.abs(sint),2/n);
+      pts.push([CX+x,CY+y]);
+    }
+    ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+    ctx.fillStyle='rgba(100,160,255,0.05)';ctx.fill();
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=200+i/pts.length*80;
+        ctx.strokeStyle=`hsl(${hue},85%,62%)`;
+        ctx.shadowBlur=9;ctx.shadowColor=`hsl(${hue},85%,62%)`;
+        ctx.lineWidth=2.4;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    hud('n = '+n.toFixed(2),'superellipse morphing');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Superellipse: |x/a|ⁿ + |y/b|ⁿ = 1',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('n=0.5 → star · n=2 → ellipse · n→∞ → rectangle',20,48);
+  }
+};
+ 
+// ── 20. TORUS KNOT ───────────────────────────────────────────
+animators.torus={
+  maxTick:1100,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,sc=Math.min(W,H)*0.12;
+    const progress=t/1100;
+    const tMax=progress*Math.PI*4;
+    const p=3,q=4;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const tt=i/800*tMax;
+      const r=Math.cos(q*tt)+2.5;
+      pts.push([CX+r*Math.cos(p*tt)*sc,CY+r*Math.sin(p*tt)*sc]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=60+i/pts.length*280;
+        ctx.strokeStyle=`hsl(${hue},88%,62%)`;
+        ctx.shadowBlur=8;ctx.shadowColor=`hsl(${hue},88%,62%)`;
+        ctx.lineWidth=2.2;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#fff';ctx.shadowBlur=14;ctx.shadowColor='#fff';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('t = '+(tMax/Math.PI).toFixed(2)+'π','torus knot p=3 q=4');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('Torus Knot  p=3, q=4',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('x=(r+cos(qt))cos(pt)  y=(r+cos(qt))sin(pt)',20,48);
+  }
+};
+ 
+// ── 21. HEART SPIRAL COMBO ───────────────────────────────────
+animators.heartspiral={
+  maxTick:1200,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.42;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/1200;
+    const tMax=progress*Math.PI*14;
+    const sc=maxR/(Math.PI*4);
+    const pts=[];
+    for(let i=0;i<=900;i++){
+      const theta=i/900*tMax;
+      const r=theta*Math.sin(theta)*sc;
+      pts.push([CX+r*Math.cos(theta),CY-r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=320+i/pts.length*80;
+        const br=52+i/pts.length*20;
+        ctx.strokeStyle=`hsl(${hue},90%,${br}%)`;
+        ctx.shadowBlur=8;ctx.shadowColor=`hsl(${hue},90%,${br}%)`;
+        ctx.lineWidth=1.8;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ff88cc';ctx.shadowBlur=18;ctx.shadowColor='#ff88cc';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('theta='+( tMax/Math.PI).toFixed(2)+'pi','r = theta*sin(theta)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = theta x sin(theta)  Heart Spiral Combo',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Spiral modulated by sin -> petal-spiral fusion',20,48);
+  }
+};
+ 
+// ── 22. LOGARITHMIC SPIRAL ───────────────────────────────────
+animators.logspiral={
+  maxTick:1100,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.44;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/1100;
+    const tMax=progress*Math.PI*10;
+    const a=6,b=0.22;
+    const sc=maxR/(a*Math.exp(b*Math.PI*5));
+    const pts=[];
+    for(let i=0;i<=900;i++){
+      const theta=i/900*tMax;
+      const r=a*Math.exp(b*theta)*sc;
+      if(r>maxR*1.08) break;
+      pts.push([CX+r*Math.cos(theta),CY-r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=150+i/pts.length*120;
+        const br=50+i/pts.length*22;
+        ctx.strokeStyle=`hsl(${hue},85%,${br}%)`;
+        ctx.shadowBlur=7;ctx.shadowColor=`hsl(${hue},85%,${br}%)`;
+        ctx.lineWidth=2.1;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#88ffcc';ctx.shadowBlur=16;ctx.shadowColor='#88ffcc';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('theta='+( tMax/Math.PI).toFixed(2)+'pi','r = a*e^(b*theta)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = a * e^(b*theta)   a='+a+'  b='+b+'   Log Spiral',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Found in shells, hurricanes, galaxies',20,48);
+  }
+};
+ 
+// ── 23. STAR SHAPE CURVE ─────────────────────────────────────
+animators.starcurve={
+  maxTick:900,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,maxR=Math.min(W,H)*0.38;
+    drawPolarGrid(CX,CY,maxR);
+    const progress=t/900;
+    const tMax=progress*Math.PI*2;
+    const pts=[];
+    for(let i=0;i<=800;i++){
+      const theta=i/800*tMax;
+      const r=(1+0.5*Math.cos(8*theta))*maxR*0.72;
+      pts.push([CX+r*Math.cos(theta),CY-r*Math.sin(theta)]);
+    }
+    if(pts.length>1){
+      if(progress>0.98){
+        ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+        ctx.fillStyle='rgba(255,220,80,0.07)';ctx.fill();
+      }
+      for(let i=1;i<pts.length;i++){
+        const hue=42+i/pts.length*25;
+        ctx.strokeStyle=`hsl(${hue},95%,62%)`;
+        ctx.shadowBlur=11;ctx.shadowColor=`hsl(${hue},95%,62%)`;
+        ctx.lineWidth=2.3;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#ffe066';ctx.shadowBlur=18;ctx.shadowColor='#ffe066';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+    hud('theta='+( tMax/Math.PI).toFixed(2)+'pi','r = 1 + 0.5cos(8theta)');
+    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('r = 1 + 0.5*cos(8*theta)   Star Curve',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('8 pointed star  change 8 for more or fewer points',20,48);
+  }
+};
+ 
+// ── 24. AQSA MATH ART ────────────────────────────────────────
+animators.aqsa={
+  maxTick:1400,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2;
+    const progress=t/1400;
+ 
+    // Layer 1: Flower r=2+sin(6theta) behind
+    const flowerT=Math.min(1,progress*2.2);
+    const flowerSc=Math.min(W,H)*0.09;
+    if(flowerT>0){
+      const fpts=[];
+      for(let i=0;i<=800;i++){
+        const theta=i/800*Math.PI*2;
+        if(theta>flowerT*Math.PI*2) break;
+        const r=(2+Math.sin(6*theta))*flowerSc;
+        fpts.push([CX+r*Math.cos(theta),CY-r*Math.sin(theta)]);
+      }
+      if(fpts.length>1){
+        if(flowerT>0.98){
+          ctx.beginPath();fpts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+          ctx.fillStyle='rgba(180,80,220,0.07)';ctx.fill();
+        }
+        for(let i=1;i<fpts.length;i++){
+          const hue=270+i/fpts.length*50;
+          ctx.strokeStyle=`hsla(${hue},80%,60%,0.7)`;
+          ctx.shadowBlur=5;ctx.shadowColor=`hsl(${hue},80%,60%)`;
+          ctx.lineWidth=1.5;
+          ctx.beginPath();ctx.moveTo(fpts[i-1][0],fpts[i-1][1]);ctx.lineTo(fpts[i][0],fpts[i][1]);ctx.stroke();
+        }ctx.shadowBlur=0;
+      }
+    }
+ 
+    // Layer 2: Wave base y=0.5sin(3x) at bottom
+    const waveT=Math.min(1,progress*1.8);
+    if(waveT>0){
+      const wY=CY+Math.min(W,H)*0.32;
+      const wSX=W/11;
+      const wAmp=Math.min(W,H)*0.032;
+      const wpts=[];
+      for(let i=0;i<=400;i++){
+        const x=-Math.PI*3+i/400*Math.PI*6;
+        if(i/400>waveT) break;
+        wpts.push([W/2+x*wSX, wY-0.5*Math.sin(3*x)*wAmp*12]);
+      }
+      if(wpts.length>1){
+        for(let i=1;i<wpts.length;i++){
+          const hue=180+i/wpts.length*40;
+          ctx.strokeStyle=`hsla(${hue},78%,60%,0.55)`;
+          ctx.lineWidth=1.6;
+          ctx.beginPath();ctx.moveTo(wpts[i-1][0],wpts[i-1][1]);ctx.lineTo(wpts[i][0],wpts[i][1]);ctx.stroke();
+        }
+      }
+    }
+ 
+    // Layer 3: Sparkle x=sin(3t), y=sin(5t)
+    const sparkT=Math.min(1,progress*1.6);
+    if(sparkT>0){
+      const spSc=Math.min(W,H)*0.115;
+      const sY=CY+Math.min(W,H)*0.25;
+      const spts=[];
+      for(let i=0;i<=600;i++){
+        const tt=i/600*Math.PI*6;
+        if(tt>sparkT*Math.PI*6) break;
+        spts.push([CX+spSc*Math.sin(3*tt), sY+spSc*Math.sin(5*tt)]);
+      }
+      if(spts.length>1){
+        for(let i=1;i<spts.length;i++){
+          const hue=48+i/spts.length*60;
+          ctx.strokeStyle=`hsla(${hue},90%,65%,0.7)`;
+          ctx.shadowBlur=5;ctx.shadowColor=`hsl(${hue},90%,65%)`;
+          ctx.lineWidth=1.4;
+          ctx.beginPath();ctx.moveTo(spts[i-1][0],spts[i-1][1]);ctx.lineTo(spts[i][0],spts[i][1]);ctx.stroke();
+        }ctx.shadowBlur=0;
+      }
+    }
+ 
+    // Layer 4: Main Heart (draws last, on top)
+    const heartT=Math.min(1,Math.max(0,(progress-0.28)*1.9));
+    const heartSc=Math.min(W,H)/40;
+    const hpts=[];
+    for(let i=0;i<=600;i++){
+      const tt=i/600*Math.PI*2;
+      if(tt>heartT*Math.PI*2) break;
+      const hx=16*Math.pow(Math.sin(tt),3);
+      const hy=13*Math.cos(tt)-5*Math.cos(2*tt)-2*Math.cos(3*tt)-Math.cos(4*tt);
+      hpts.push([CX+hx*heartSc, CY-hy*heartSc]);
+    }
+    if(hpts.length>1){
+      if(heartT>0.98){
+        ctx.beginPath();hpts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+        ctx.fillStyle='rgba(255,40,80,0.13)';ctx.fill();
+      }
+      for(let i=1;i<hpts.length;i++){
+        const hue=338+i/hpts.length*28;
+        const lum=58+i/hpts.length*18;
+        ctx.strokeStyle=`hsl(${hue},95%,${lum}%)`;
+        ctx.shadowBlur=14;ctx.shadowColor=`hsl(${hue},95%,65%)`;
+        ctx.lineWidth=2.8;
+        ctx.beginPath();ctx.moveTo(hpts[i-1][0],hpts[i-1][1]);ctx.lineTo(hpts[i][0],hpts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+      const lp=hpts[hpts.length-1];
+      ctx.fillStyle='#ff3366';ctx.shadowBlur=22;ctx.shadowColor='#ff3366';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],7,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    }
+ 
+    // Labels
+    ctx.fillStyle='rgba(255,255,255,0.88)';ctx.font='bold 15px monospace';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.fillText('Aqsa Math Art',20,28);
+    ctx.fillStyle='rgba(255,180,200,0.6)';ctx.font='12px monospace';
+    ctx.fillText('Heart  +  Flower  +  Wave  +  Sparkle',20,48);
+    hud(Math.floor(progress*100)+'%','layers composing...');
+  }
+};
+ 
+function animateGeneric(eq){
+  ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='16px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('Animating: '+eq.name,W/2,H/2);prog(1);
+}
+</script>
+</body>
+</html>
