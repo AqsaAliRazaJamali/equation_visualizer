@@ -130,6 +130,8 @@ const EQUATIONS=[
   {id:'logspiral',  name:'Logarithmic Spiral',  formula:'r = a · eᵇθ',                           desc:'Found in shells 🐚, hurricanes 🌪️, galaxies 🌌'},
   {id:'starcurve',  name:'Star Shape Curve',    formula:'r = 1 + 0.5·cos(8θ)',                   desc:'8-pointed star-like polar pattern ⭐'},
   {id:'aqsa',       name:'Aqsa ❤️ Math Art',    formula:'Heart + Flower + Wave + Sparkle',        desc:'A combined masterpiece — heart, flower, wave & decorative loops ✨'},
+  {id:'circle',     name:'Circle Equation',    formula:'x² + y² = 4',                          desc:'Perfect circle of radius 2. Foundation of all round geometry.'},
+  {id:'dynamicwave',name:'Dynamic Wave',        formula:'y = sin(x − t) + 0.5·sin(2x − 2t)',desc:'Travelling wave that evolves over time. Physics of light & sound.'},
 ];
  
 // Build left panel
@@ -1187,6 +1189,123 @@ animators.aqsa={
     ctx.fillStyle='rgba(255,180,200,0.6)';ctx.font='12px monospace';
     ctx.fillText('Heart  +  Flower  +  Wave  +  Sparkle',20,48);
     hud(Math.floor(progress*100)+'%','layers composing...');
+  }
+};
+ 
+// ── 25. CIRCLE x²+y²=4 ───────────────────────────────────────────
+animators.circle={
+  maxTick:900,
+  init(s){},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,SX=W/10,SY=W/10;
+    drawGrid(CX,CY,SX,SY,5,4);
+    const progress=t/900;
+    const tMax=progress*Math.PI*2;
+    const R=2; // radius in math units
+    const pts=[];
+    for(let i=0;i<=600;i++){
+      const angle=i/600*tMax;
+      pts.push([CX+R*Math.cos(angle)*SX, CY-R*Math.sin(angle)*SY]);
+    }
+    // Draw filled sector first
+    if(pts.length>1 && progress>0.02){
+      ctx.beginPath();
+      ctx.moveTo(CX,CY);
+      pts.forEach(p=>ctx.lineTo(p[0],p[1]));
+      ctx.closePath();
+      ctx.fillStyle='rgba(80,160,255,0.06)';
+      ctx.fill();
+    }
+    // Draw arc with gradient glow
+    if(pts.length>1){
+      for(let i=1;i<pts.length;i++){
+        const hue=200+i/pts.length*80;
+        ctx.strokeStyle=`hsl(${hue},90%,65%)`;
+        ctx.shadowBlur=14;ctx.shadowColor=`hsl(${hue},90%,65%)`;
+        ctx.lineWidth=2.8;
+        ctx.beginPath();ctx.moveTo(pts[i-1][0],pts[i-1][1]);ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();
+      }ctx.shadowBlur=0;
+    }
+    // Moving dot
+    if(pts.length>0){
+      const lp=pts[pts.length-1];
+      ctx.fillStyle='#88ddff';ctx.shadowBlur=20;ctx.shadowColor='#88ddff';
+      ctx.beginPath();ctx.arc(lp[0],lp[1],7,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      // Radius line
+      ctx.strokeStyle='rgba(255,255,255,0.22)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(CX,CY);ctx.lineTo(lp[0],lp[1]);ctx.stroke();
+      ctx.setLineDash([]);
+      // Show coordinates
+      const cx2=R*Math.cos(tMax);
+      const cy2=R*Math.sin(tMax);
+      ctx.fillStyle='rgba(255,255,255,0.55)';ctx.font='11px monospace';ctx.textAlign='left';
+      ctx.fillText('('+cx2.toFixed(2)+', '+cy2.toFixed(2)+')',lp[0]+10,lp[1]-6);
+    }
+    // Center dot
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.beginPath();ctx.arc(CX,CY,4,0,Math.PI*2);ctx.fill();
+    // Axis tick labels for radius
+    ctx.fillStyle='rgba(80,200,255,0.7)';ctx.font='11px monospace';ctx.textAlign='center';
+    ctx.fillText('2',CX+2*SX+14,CY+14);
+    ctx.fillText('-2',CX-2*SX-14,CY+14);
+    ctx.fillText('2',CX+4,CY-2*SY-6);
+    ctx.fillText('-2',CX+4,CY+2*SY+14);
+    hud('angle = '+(tMax/Math.PI).toFixed(3)+'\u03c0','x\u00b2 + y\u00b2 = 4   r = 2');
+    ctx.fillStyle='rgba(255,255,255,0.75)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('x\u00b2 + y\u00b2 = 4   (Circle, radius = 2)',20,28);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Every point is exactly 2 units from the origin',20,48);
+  }
+};
+ 
+// ── 26. DYNAMIC WAVE ───────────────────────────────────────────
+animators.dynamicwave={
+  maxTick:1200,
+  init(s){s.time=0;},
+  draw(s,t){
+    bg();
+    const CX=W/2,CY=H/2,SX=W/13,SY=H/3.6;
+    drawGrid(CX,CY,SX,SY,6,3);
+    s.time=t/1200*Math.PI*8; // time parameter grows
+    const timeVal=s.time;
+    // Draw 3 wave components
+    const waves=[
+      {fn:(x,t)=>Math.sin(x-t),           color:'rgba(80,160,255,0.4)',  lw:1.4, label:'sin(x−t)'},
+      {fn:(x,t)=>0.5*Math.sin(2*x-2*t),   color:'rgba(255,100,180,0.4)', lw:1.4, label:'0.5·sin(2x−2t)'},
+      {fn:(x,t)=>Math.sin(x-t)+0.5*Math.sin(2*x-2*t), color:'#ffe066', lw:2.8, label:'combined (travelling wave)'},
+    ];
+    waves.forEach((w,wi)=>{
+      const pts=[];
+      for(let i=0;i<=500;i++){
+        const x=-Math.PI*3+i/500*Math.PI*6;
+        const y=w.fn(x,timeVal);
+        pts.push([CX+x*SX, CY-y*SY]);
+      }
+      if(pts.length<2) return;
+      ctx.strokeStyle=w.color;
+      ctx.shadowBlur=wi===2?12:4;ctx.shadowColor=w.color;
+      ctx.lineWidth=w.lw;
+      ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+      ctx.stroke();ctx.shadowBlur=0;
+      // Moving dot on combined wave only
+      if(wi===2){
+        const mid=pts[Math.floor(pts.length/2)];
+        ctx.fillStyle='#ffe066';ctx.shadowBlur=16;ctx.shadowColor='#ffe066';
+        ctx.beginPath();ctx.arc(mid[0],mid[1],6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      }
+    });
+    // Legend — bottom left, well spaced
+    const ly=H-52;
+    ctx.font='11px monospace';ctx.textAlign='left';
+    ctx.fillStyle='rgba(80,160,255,0.8)';ctx.fillText('sin(x−t)',20,ly);
+    ctx.fillStyle='rgba(255,100,180,0.8)';ctx.fillText('0.5·sin(2x−2t)',110,ly);
+    ctx.fillStyle='#ffe066';ctx.fillText('combined',270,ly);
+    ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px monospace';
+    ctx.fillText('Wave moves rightward as time t increases',20,H-12);
+    hud('t = '+(timeVal/Math.PI).toFixed(2)+'\u03c0','travelling wave');
+    ctx.fillStyle='rgba(255,255,255,0.75)';ctx.font='bold 14px monospace';ctx.textAlign='left';
+    ctx.fillText('y = sin(x−t) + 0.5·sin(2x−2t)   Dynamic Wave',20,28);
   }
 };
  
