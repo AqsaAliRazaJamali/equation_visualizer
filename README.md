@@ -1,5 +1,10 @@
 # ✨ Math equation_visualizer
 
+## 🚀 Live Demo
+
+ (https://aqsaalirazajamali.github.io/equation_visualizer/)
+ 
+
 I built a math visualizer from scratch — no libraries, no frameworks.  
 Just pure HTML, CSS, and JavaScript.
 
@@ -40,7 +45,7 @@ Because that’s how math actually feels when you truly understand it.
 - Zero dependencies  
 
 
-## 🚀 Why This Project?
+## Why This Project?
 
 This project was built with curiosity, late nights, and a belief that  
 beautiful ideas deserve beautiful explanations.
