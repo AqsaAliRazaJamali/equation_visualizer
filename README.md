@@ -1,4 +1,4 @@
-# ✨ Math equation_visualizer
+# Math equation_visualizer
 
 ## 🚀 Live Demo
 
@@ -16,7 +16,7 @@ So I built something that changes that.
 
 ## 🌟 Features
 
-- 24+ animated mathematical visualizations (continuously expanding)
+- 26 animated mathematical visualizations (continuously expanding)
 - Real-time drawing of equations from scratch
 - Smooth animations using HTML5 Canvas
 - Designed for learning through visualization
