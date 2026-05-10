@@ -7,7 +7,7 @@
 
 ## 🚀 Live Demo
 
- [https://aqsaalirazajamali.github.io/equation_visualizer/]
+ https://aqsaalirazajamali.github.io/equation_visualizer/
  
 
 I built a math visualizer from scratch — no libraries, no frameworks.  
