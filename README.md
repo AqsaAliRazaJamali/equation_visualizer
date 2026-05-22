@@ -1,4 +1,4 @@
-# 🧮 Math Equation Visualizer
+# ✨ Math Equation Visualizer
 
 ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E)
 ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white)
@@ -77,6 +77,12 @@ If you're a student, teacher, developer, or someone who once gave up on math —
 - Optimize rendering performance for larger visual simulations
   
 
+---
 
+## 👩‍💻 Author
+
+**Aqsa Jamali**  
+Computer Science Student at Sukkur IBA University  
+Passionate about mathematical visualization, interactive learning systems, and creative frontend development.
 
 
