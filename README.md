@@ -70,10 +70,12 @@ If you're a student, teacher, developer, or someone who once gave up on math —
 
 ## 📌 Future Improvements
 
-- Add more complex mathematical visualizations  
-- User interaction (sliders, controls)  
-- Export animations  
-- Performance optimization  
+- Add interactive parameter controls for equations
+- Implement zoom and graph navigation
+- Support 3D mathematical visualizations
+- Add downloadable animation exports
+- Optimize rendering performance for larger visual simulations
+  
 
 
 
